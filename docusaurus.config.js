@@ -6,7 +6,7 @@ const config = {
   title: 'Where Winds Meed - Event Manager Bot',
   tagline: 'Documentation du bot Where Winds Meet - Event Manager',
   favicon: 'img/favicon.ico',
-  url: 'https://wwm-discord-emb.vercel.app/', //URL Vercel du bot
+  url: 'https://wwm-discord-emb-teal.vercel.app/', //URL Vercel du bot
   baseUrl: '/',
   organizationName: 'Iron Racletteurs',
   projectName: 'Where Winds Meet - Event Manager Bot',
@@ -23,7 +23,7 @@ const config = {
         docs: {
           routeBasePath: '/',
           sidebarPath: './sidebars.js',
-          editUrl: 'https://github.com/Iron-Raclette/WWM_Discord_EMB/tree/main'
+          editUrl: 'https://github.com/Bakadechi/WWM_Discord_EMB'
         },
         blog: false,
         theme: {
@@ -53,7 +53,7 @@ const config = {
             position: 'left',
             label: 'Documentation',
           },          {
-            href: 'https://github.com/Iron-Raclette/WWM_Discord_EMB',
+            href: 'https://github.com/Bakadechi/WWM_Discord_EMB',
             label: 'GitHub',
             position: 'right',
           }
