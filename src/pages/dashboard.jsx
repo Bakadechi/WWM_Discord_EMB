@@ -1,7 +1,7 @@
 import React, {useEffect, useMemo, useState} from 'react';
 import Layout from '@theme/Layout';
 
-const MASTER_PASSWORD = 'IronRidersRaclette@WWM';
+const MASTER_PASSWORD = 'IronRiders!67';
 const DEFAULT_SECRET = 'JESAISPAS';
 
 const MENU = [
