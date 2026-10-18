@@ -1,7 +1,7 @@
 const crypto = require('node:crypto');
 const { newEvent, saveEvent, getEvent, getAllEvents, templates, saveDraft, getDraft, deleteDraft } = require('../lib/racletteEvents'); // To Change
 const { sendChannelMessage, sendChannelMessageWithAttachment, editChannelMessage, deleteChannelMessage, getGuildMemberDisplayName } = require('../lib/discordApi');
-const { eventButtons, templateButtons, guildEventModeButtons, classButtons, daySelectMenu, eventEmbed } = require('../lib/components');
+const { eventButtons, templateButtons, guildEventModeButtons, classButtons, daySelectMenu, eventEmbed, isActivePending } = require('../lib/components');
 const { getJson, setJson, mgetJson } = require('../lib/vercelStore');
 const { commands } = require('../lib/commands');
 
@@ -967,12 +967,13 @@ module.exports = async function handler(req, res) {
 
       let finalRole = role;
       if (raidMode && ['tank', 'dps', 'healer'].includes(role)) {
-        const active = Object.values(event.attendees).filter((x) => ['tank', 'dps', 'healer'].includes(x.role) || (x.role === 'pending_spec' && ['tank', 'dps', 'healer'].includes(x.desiredRole))).length;
+        const now = Date.now();
+        const active = Object.entries(event.attendees).filter(([id, x]) => id !== userId && (['tank', 'dps', 'healer'].includes(x.role) || isActivePending(x, now))).length;
         finalRole = event.capacity != null && active >= event.capacity ? 'bench' : role;
       }
 
       if (raidMode && ['dps', 'tank', 'healer'].includes(finalRole)) {
-        event.attendees[userId] = { userId, role: 'pending_spec', desiredRole: finalRole, class: null, displayName: userName };
+        event.attendees[userId] = { userId, role: 'pending_spec', desiredRole: finalRole, pendingAt: Date.now(), class: null, displayName: userName };
         appendEventActivityLog(event, { action: 'register-pending-spec', userId, userName, role: finalRole, fromRole: previousRole });
         await saveEvent(event);
         await editChannelMessage(event.channelId, event.messageId, { embeds: [eventEmbed(event)], components: eventComponentsFor(event) });
@@ -995,8 +996,23 @@ module.exports = async function handler(req, res) {
       const existing = event.attendees[body.member.user.id];
       if (existing && existing.role === 'pending_spec' && existing.desiredRole && existing.desiredRole !== role) return json(res, ephemeralMessage('La spécialisation choisie ne correspond pas au rôle sélectionné.'));
       const className = Buffer.from(encoded, 'base64url').toString('utf8');
-      event.attendees[body.member.user.id] = { userId: body.member.user.id, role, class: className, displayName: actorDisplayName(body.member) };
-      appendEventActivityLog(event, { action: 'select-class', userId: body.member.user.id, userName: actorDisplayName(body.member), role, className, fromRole: existing?.desiredRole || existing?.role || '' });
+      const classUserId = body.member.user.id;
+      const now = Date.now();
+      const hasSlot = existing && (['tank', 'dps', 'healer'].includes(existing.role) || isActivePending(existing, now));
+      let validatedRole = role;
+      if (!hasSlot && event.capacity != null && !['social', 'announce'].includes(event.mode)) {
+        const others = Object.entries(event.attendees).filter(([id, x]) => id !== classUserId && (['tank', 'dps', 'healer'].includes(x.role) || isActivePending(x, now))).length;
+        if (others >= event.capacity) validatedRole = 'bench';
+      }
+      if (validatedRole === 'bench') {
+        event.attendees[classUserId] = { userId: classUserId, role: 'bench', class: null, displayName: actorDisplayName(body.member) };
+        appendEventActivityLog(event, { action: 'bench', userId: classUserId, userName: actorDisplayName(body.member), role: 'bench', fromRole: existing?.desiredRole || existing?.role || '' });
+        await saveEvent(event);
+        await editChannelMessage(event.channelId, event.messageId, { embeds: [eventEmbed(event)], components: eventComponentsFor(event) });
+        return json(res, ephemeralMessage('⌛ Ta réservation a expiré et le roster est complet : tu es placé en bench.'));
+      }
+      event.attendees[classUserId] = { userId: classUserId, role, class: className, displayName: actorDisplayName(body.member) };
+      appendEventActivityLog(event, { action: 'select-class', userId: classUserId, userName: actorDisplayName(body.member), role, className, fromRole: existing?.desiredRole || existing?.role || '' });
       await saveEvent(event);
       await editChannelMessage(event.channelId, event.messageId, { embeds: [eventEmbed(event)], components: eventComponentsFor(event) });
       return json(res, { type: 6 });
