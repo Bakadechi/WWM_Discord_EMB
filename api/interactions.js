@@ -559,9 +559,13 @@ async function buildMonthlyCalendarMessage(guildId, year, month) {
 async function archiveAndDeleteEventMessage(event) {
   event.archived = true;
   await saveEvent(event);
-  await sendChannelMessage(ARCHIVE_LOG_CHANNEL_ID, {
-    content: `🗃️ Event archivé: **${event.title}** (ID: \`${event.id}\`) — prévu pour <t:${Math.floor(event.startsAt / 1000)}:F> dans <#${event.channelId}>.`
-  });
+  // Message de confirmation : dans le salon d'archives si ARCHIVE_LOG_CHANNEL_ID est défini, sinon dans le salon de l'event
+  const logChannelId = process.env.ARCHIVE_LOG_CHANNEL_ID || event.channelId;
+  try {
+    await sendChannelMessage(logChannelId, {
+      content: `🗑️ Event supprimé : **${event.title}** (ID: \`${event.id}\`) — prévu pour <t:${Math.floor(event.startsAt / 1000)}:F>${logChannelId !== event.channelId ? ` dans <#${event.channelId}>` : ''}.`
+    });
+  } catch {}
   for (const pingId of event.reminderMessageIds || []) {
     try { await deleteChannelMessage(event.channelId, pingId); } catch {}
   }
