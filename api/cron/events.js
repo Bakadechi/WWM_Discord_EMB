@@ -1,11 +1,11 @@
-const { getAllEvents, saveEvent, newEvent, nextRecurrenceTimestamp } = require('../../lib/racletteEvents');
+const { getAllEvents, getEvent, saveEvent, newEvent, nextRecurrenceTimestamp } = require('../../lib/racletteEvents');
 const { sendChannelMessage, editChannelMessage, deleteChannelMessage } = require('../../lib/discordApi');
 const { getJson, setJson, mgetJson } = require('../../lib/vercelStore');
 
 const ARCHIVE_LOG_CHANNEL_ID = process.env.ARCHIVE_LOG_CHANNEL_ID || '1517640364868112565'; // ID TO CHANGE HERE
 const EVENT_PING_ROLE_ID = process.env.EVENT_PING_ROLE_ID || '1442593556215758989';
 const LEGACY_ROLE_IDS = new Set([]);
-const { eventButtons, eventEmbed } = require('../../lib/components');
+const { eventButtons, eventEmbed, isActivePending } = require('../../lib/components');
 const TEMP_VOCAL_TRIGGER_CHANNEL_ID = process.env.TEMP_VOCAL_TRIGGER_CHANNEL_ID || '1439389839467483189';
 
 const TEN_MIN_REMINDER_WINDOW_MS = 15 * 60 * 1000;
@@ -221,6 +221,29 @@ module.exports = async function handler(req, res) {
     try {
       if (event.archived) continue;
 
+      // Inscriptions "en attente de classe" expirées -> bench (libère la place dans l'embed)
+      if (!['social', 'announce'].includes(event.mode) && Object.values(event.attendees || {}).some((a) => a.role === 'pending_spec' && !isActivePending(a, now))) {
+        try {
+          const fresh = (await getEvent(event.id)) || event; // relecture juste avant d'écrire
+          let moved = 0;
+          for (const [uid, a] of Object.entries(fresh.attendees || {})) {
+            if (a.role === 'pending_spec' && !isActivePending(a, now)) {
+              fresh.attendees[uid] = { userId: uid, role: 'bench', class: null, displayName: a.displayName };
+              moved += 1;
+            }
+          }
+          if (moved) {
+            await saveEvent(fresh);
+            if (fresh.messageId) {
+              await editChannelMessage(fresh.channelId, fresh.messageId, { embeds: [eventEmbed(fresh)], components: eventButtons(fresh.id, false, fresh.mode) });
+            }
+            event.attendees = fresh.attendees;
+          }
+        } catch {
+          errors += 1;
+        }
+      }
+
       if (normalizeGuildEventPingRoles(event)) await saveEvent(event);
 
       const reminderAt = event.startsAt - 10 * 60 * 1000;
@@ -290,9 +313,13 @@ module.exports = async function handler(req, res) {
         await saveEvent(event);
         archived += 1;
 
-        await sendChannelMessage(ARCHIVE_LOG_CHANNEL_ID, {
-          content: `🗃️ Event ${isRecurring ? 'instance cloturée' : 'archivé'}: **${event.title}** (ID: \`${event.id}\`) — prévu pour <t:${Math.floor(event.startsAt / 1000)}:F> dans <#${event.channelId}>.`
-        });
+        if (process.env.ARCHIVE_LOG_CHANNEL_ID) {
+          try {
+            await sendChannelMessage(process.env.ARCHIVE_LOG_CHANNEL_ID, {
+              content: `🗃️ Event ${isRecurring ? 'instance cloturée' : 'archivé'}: **${event.title}** (ID: \`${event.id}\`) — prévu pour <t:${Math.floor(event.startsAt / 1000)}:F> dans <#${event.channelId}>.`
+            });
+          } catch {}
+        }
       }
     } catch {
       errors += 1;
